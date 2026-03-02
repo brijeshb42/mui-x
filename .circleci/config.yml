@@ -50,11 +50,6 @@ default-job: &default-job
     # expose it globally otherwise we have to thread it from each job to the install command
     BROWSERSTACK_FORCE: << pipeline.parameters.browserstack-force >>
     COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
-    # Used by the code-infra orb to diff against the correct base branch for dedupe and prettier checks
-    # #target-branch-reference
-    # Replace `master` with the new branch `vX.x` when creating the first PR on the vX.x branch
-    # For example, when creating v9 from v8, `master -> v8.x`
-    BASE_BRANCH: master
   working_directory: /tmp/mui
   executor: code-infra/mui-node
 # CircleCI has disabled the cache across forks for security reasons.
@@ -157,6 +152,22 @@ jobs:
     steps:
       - checkout
       - install-deps
+      - run:
+          name: Resolve base branch
+          command: |
+            BASE_BRANCH="master"
+            if [[ -n "${CIRCLE_PULL_REQUEST}" ]]; then
+              PR_NUMBER="${CIRCLE_PULL_REQUEST##*/}"
+              REPO_SLUG="${CIRCLE_PULL_REQUEST#https://github.com/}"
+              REPO_SLUG="${REPO_SLUG%/pull/*}"
+              FETCHED_BASE=$(curl -sf "https://api.github.com/repos/${REPO_SLUG}/pulls/${PR_NUMBER}" | jq -r '.base.ref // empty')
+              if [[ -n "${FETCHED_BASE}" ]]; then
+                BASE_BRANCH="${FETCHED_BASE}"
+              fi
+            fi
+            echo "Resolved base branch: ${BASE_BRANCH}"
+            git fetch origin "${BASE_BRANCH}" --depth 1
+            echo "export BASE_BRANCH=origin/${BASE_BRANCH}" >> "$BASH_ENV"
       - code-infra/check-static-changes
       - run:
           name: Generate PropTypes
